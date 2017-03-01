@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.7)
+cmake_minimum_required(VERSION 3.1)
 if(POLICY CMP0046)
   cmake_policy(SET CMP0046 NEW)
 endif()
@@ -10,9 +10,13 @@ endif()
 project(Caffe C CXX)
 
 # ---[ Caffe version
-set(CAFFE_TARGET_VERSION "1.0.0-rc4" CACHE STRING "Caffe logical version")
-set(CAFFE_TARGET_SOVERSION "1.0.0-rc4" CACHE STRING "Caffe soname version")
-add_definitions(-DCAFFE_VERSION=${CAFFE_TARGET_VERSION})
+set(CAFFE_TARGET_VERSION "1.0.0-rc5" CACHE STRING "Caffe logical version")
+set(CAFFE_TARGET_SOVERSION "1.0.0-rc5" CACHE STRING "Caffe soname version")
+add_definitions(-DCAFFE_VERSION=${CAFFE_TARGET_VERSION} -DCMAKE_BUILD)
+
+# ---[ Enable C++11 support
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED on)
 
 # ---[ Using cmake scripts and modules
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/Modules)
@@ -39,6 +43,10 @@ caffe_option(USE_OPENCV "Build with OpenCV support" ON)
 caffe_option(USE_LEVELDB "Build with levelDB" ON)
 caffe_option(USE_LMDB "Build with lmdb" ON)
 caffe_option(ALLOW_LMDB_NOLOCK "Allow MDB_NOLOCK when reading LMDB files (only if necessary)" OFF)
+caffe_option(USE_OPENMP "Link with OpenMP (when your BLAS wants OpenMP and you get linker errors)" OFF)
+set(DEFAULT_LAYER_PATH "${CMAKE_INSTALL_PREFIX}/lib/caffe/layers" CACHE STRING "Default layer module search path")
+set(LAYER_MODULE_PREFIX "${CMAKE_SHARED_MODULE_PREFIX}" CACHE STRING "Prefix used to form filenames from module names")
+set(LAYER_MODULE_SUFFIX "${CMAKE_SHARED_MODULE_SUFFIX}" CACHE STRING "Suffix used to form filenames from module names")
 
 # ---[ Dependencies
 include(cmake/Dependencies.cmake)
@@ -55,8 +63,6 @@ if(USE_libstdcpp)
   message("-- Warning: forcing libstdc++ (controlled by USE_libstdcpp option in cmake)")
 endif()
 
-add_definitions(-DGTEST_USE_OWN_TR1_TUPLE)
-
 # ---[ Warnings
 caffe_warnings_disable(CMAKE_CXX_FLAGS -Wno-sign-compare -Wno-uninitialized)
 
@@ -65,8 +71,26 @@ configure_file(cmake/Templates/caffe_config.h.in "${PROJECT_BINARY_DIR}/caffe_co
 
 # ---[ Includes
 set(Caffe_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/include)
-include_directories(${Caffe_INCLUDE_DIR} ${PROJECT_BINARY_DIR})
-include_directories(BEFORE src) # This is needed for gtest.
+set(Caffe_SRC_DIR ${PROJECT_SOURCE_DIR}/src)
+include_directories(${PROJECT_BINARY_DIR})
+
+# ---[ Includes & defines for CUDA
+
+# cuda_compile() does not have per-call dependencies or include pathes
+# (cuda_compile() has per-call flags, but we set them here too for clarity)
+#
+# list(REMOVE_ITEM ...) invocations remove PRIVATE and PUBLIC keywords from collected definitions and include pathes
+if(HAVE_CUDA)
+  # pass include pathes to cuda_include_directories()
+  set(Caffe_ALL_INCLUDE_DIRS ${Caffe_INCLUDE_DIRS})
+  list(REMOVE_ITEM Caffe_ALL_INCLUDE_DIRS PRIVATE PUBLIC)
+  cuda_include_directories(${Caffe_INCLUDE_DIR} ${Caffe_SRC_DIR} ${Caffe_ALL_INCLUDE_DIRS})
+
+  # add definitions to nvcc flags directly
+  set(Caffe_ALL_DEFINITIONS ${Caffe_DEFINITIONS})
+  list(REMOVE_ITEM Caffe_ALL_DEFINITIONS PRIVATE PUBLIC)
+  list(APPEND CUDA_NVCC_FLAGS ${Caffe_ALL_DEFINITIONS})
+endif()
 
 # ---[ Subdirectories
 add_subdirectory(src/gtest)
